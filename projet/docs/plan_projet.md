@@ -279,3 +279,179 @@ Chaque fonction a une docstring, prend des paramètres explicites et ne dépend 
 
 ---
 
+## 6. Construction des indicateurs
+
+### 6.1 Indicateur principal
+
+**Nombre de tués sur le réseau concerné**, par département et par année (ou par semestre), rapporté :
+
+- à la **population** (tués par million d'habitants), pour comparer des départements de tailles différentes ;
+- au **trafic** quand l'indicateur est disponible, pour neutraliser 2020.
+
+### 6.2 Indicateurs secondaires
+
+- Nombre d'**accidents mortels** (plus stable que le nombre de tués, car un accident peut faire plusieurs victimes).
+- Tués par **type de collision** : frontale, sortie de route sans tiers, autres.
+- Tués par **type d'usager** : automobilistes, deux-roues motorisés, piétons, cyclistes.
+- **Gravité moyenne** : part des tués parmi les victimes (avec la réserve sur les blessés hospitalisés).
+
+### 6.3 Les groupes
+
+| Groupe | Définition | Utilisé pour |
+|---|---|---|
+| Réseau concerné / non concerné | Règle de la section 5.2 | Q1 |
+| `G80` | Départements restés à 80 km/h | Q2 (groupe témoin) |
+| `G90_partiel` | Départements ayant relevé une partie du réseau | Q2 |
+| `G90_total` | Départements ayant relevé la quasi-totalité du réseau | Q2 |
+| `G80_rural` | Départements restés à 80 km/h, hors départements très urbains | Q2 (robustesse) |
+
+**Définition de « très urbain » :** à fixer à partir de la densité de population ou de la part de population en agglomération (INSEE). Le seuil est choisi **avant** de regarder les résultats et justifié dans le rapport.
+
+### 6.4 Gérer les petits nombres
+
+Dans un petit département, le nombre de tués annuel peut être de quelques dizaines : une variation de quelques décès fait bouger fortement le taux. Pour éviter de surinterpréter le bruit :
+
+- on agrège **par groupe** plutôt que de commenter des départements isolés ;
+- on lisse sur **plusieurs années** (moyenne mobile ou comparaison de périodes) ;
+- on indique, quand c'est utile, un **intervalle de confiance** sur les comptages (approximation de Poisson : un compte `N` a un écart-type d'environ `√N`).
+
+---
+
+## 7. Analyse descriptive
+
+Chaque graphique doit avoir un titre explicite, des axes nommés avec leurs unités, une légende lisible, et **un paragraphe de commentaire** qui relie le résultat à une hypothèse.
+
+### 7.1 Description de la base
+
+- Nombre d'accidents, de tués, d'usagers par année, avant et après harmonisation.
+- Part des accidents sur le réseau concerné, par année (contrôle de la règle de la section 5.2).
+- Valeurs manquantes par variable et par année, sous forme de tableau ou de heatmap.
+
+### 7.2 Graphiques prévus
+
+| # | Graphique | Type | Question |
+|---|---|---|---|
+| G1 | Tués par mois, 2010-2024, réseau concerné vs non concerné, lignes verticales en juillet 2018 et en 2020 | Séries temporelles | Q1 |
+| G2 | Carte des départements selon leur groupe (`G80`, `G90_partiel`, `G90_total`) | Carte choroplèthe | Q2 |
+| G3 | Calendrier des relèvements : date de relèvement par département | Frise ou graphique en points | Q2 |
+| G4 | **Tués en base 100 (2017 ou 2019) par groupe, 2015-2024** | Séries temporelles | Q2 — graphique central |
+| G5 | Évolution en fonction du nombre d'années avant/après le relèvement de chaque département | « Étude d'événement » descriptive | Q2 |
+| G6 | Répartition des tués par type de collision, avant/après, par groupe | Barres groupées | H4 |
+| G7 | Carte des taux de tués par million d'habitants, avant et après | Deux cartes côte à côte | Q2 |
+| G8 | Accidents dans un rayon de 1 km autour des radars, avant/après mise en service | Barres ou boîtes à moustaches | Q3 |
+
+Bibliothèques : `matplotlib` / `seaborn` ou `plotnine` pour les graphiques statiques, `geopandas` + `cartiflette` pour les cartes, éventuellement `plotly` ou `folium` pour une carte interactive des accidents.
+
+### 7.3 Pistes d'interprétation à préparer
+
+- Si la baisse de 2018-2019 est visible **aussi** sur le réseau non concerné, une partie de l'effet relève d'une tendance générale (amélioration du parc automobile, autres mesures).
+- Si `G90_total` diverge de `G80` alors que `G90_partiel` ne diverge pas, cela soutient H3.
+- Si les écarts apparaissent **avant** le relèvement, les groupes n'étaient pas comparables : il faut le dire et relativiser les conclusions (voir section 8).
+
+---
+
+## 8. Démarche scientifique
+
+### 8.1 La méthode centrale : avant/après avec groupe témoin
+
+Pour Q2, nous comparons **l'évolution** de la mortalité dans les départements relevés à celle des départements restés à 80 km/h :
+
+```
+effet estimé = (évolution dans G90) − (évolution dans G80)
+             = (Y_G90, après − Y_G90, avant) − (Y_G80, après − Y_G80, avant)
+```
+
+C'est le principe de la **différence de différences**, appliqué ici de manière descriptive avec des moyennes de groupes, sans avoir besoin d'un modèle économétrique.
+
+**Périodes :**
+
+- *avant* : de juillet 2018 à fin 2019, quand tous les départements sont à 80 km/h. On peut l'élargir à 2015-2019 pour vérifier les tendances ;
+- *après* : de la date de relèvement de chaque département jusqu'à 2024 ;
+- **2020 est traitée à part** à cause du Covid : on présente les résultats avec et sans cette année.
+
+**Condition de validité :** les deux groupes doivent avoir des **tendances parallèles avant le relèvement**. On le vérifie visuellement avec le graphique G4 sur 2015-2019. Si les courbes divergent déjà avant 2020, la comparaison est fragile.
+
+**Dates de relèvement échelonnées :** comme les départements n'ont pas relevé au même moment, le graphique G5 aligne chaque département sur **sa propre date** de relèvement (année −3, −2, −1, 0, +1, +2…). C'est plus juste qu'une date unique pour tout le monde.
+
+### 8.2 Les biais à discuter explicitement
+
+| Biais | Pourquoi il existe | Comment on le traite |
+|---|---|---|
+| **Sélection** | Les départements ont choisi de relever ou non ; les départements très urbains sont tous restés à 80 | Comparaison restreinte aux départements ruraux (`G80_rural`) ; comparaison des profils des groupes avant 2020 |
+| **Covid** | Le trafic s'effondre en 2020, l'année des premiers relèvements | Taux rapportés au trafic quand c'est possible ; résultats avec et sans 2020 |
+| **Petits nombres** | Peu de tués par département et par an | Agrégation par groupe, périodes pluriannuelles, ordres de grandeur de l'incertitude |
+| **Mesures concomitantes** | Certains relèvements s'accompagnent de nouvelles zones à 70 km/h, de radars, d'aménagements | À mentionner ; on ne peut pas tout isoler |
+| **Mesure imparfaite du traitement** | Relèvements partiels, dates parfois imprécises | Distinction `total` / `partiel` ; analyse de sensibilité en décalant les dates de quelques mois |
+| **Rupture des données en 2019** | Changement de format BAAC l'année même de la LOM | Contrôle de la stabilité des séries autour de 2019 (section 5.2) |
+| **Régression vers la moyenne** (Q3) | Les radars sont installés là où il y a eu beaucoup d'accidents, qui auraient de toute façon baissé ensuite | Comparer avec des points accidentogènes sans radar ; prudence dans les conclusions |
+| **Biais de survie** (Q3) | Seuls les radars encore en service figurent dans le fichier | À mentionner |
+
+### 8.3 Tests de robustesse
+
+1. Résultats **avec et sans 2020**.
+2. Résultats en **tués** puis en **accidents mortels**.
+3. Résultats sur **tous les départements** puis sur les **départements ruraux** uniquement.
+4. Résultats avec **`G90_total` seul**, puis avec `G90_total` + `G90_partiel`.
+5. Décaler les **dates de relèvement** de ±6 mois pour voir si la conclusion tient.
+
+Un tableau récapitulatif dans le rapport présente l'effet estimé dans chaque configuration. Une conclusion qui tient dans toutes les configurations est solide ; une conclusion qui ne tient que dans une seule doit être présentée avec prudence.
+
+### 8.4 Confrontation avec l'évaluation officielle
+
+L'ONISR a publié une étude sur l'impact du relèvement à 90 km/h entre 2019 et 2022, qui conclut à une surmortalité dans les départements relevés. Dans le rapport :
+
+- résumer sa méthode (groupes, période, indicateur) ;
+- comparer nos groupes aux siens ;
+- comparer nos ordres de grandeur aux siens ;
+- expliquer les écarts éventuels (définition des groupes, période, traitement de 2020).
+
+Retrouver un résultat officiel avec ses propres données, ou expliquer de manière convaincante pourquoi on s'en écarte, est un très bon argument de démarche scientifique.
+
+### 8.5 Ce que nous ne pourrons pas conclure
+
+À écrire noir sur blanc dans la conclusion :
+
+- nous mesurons l'effet d'une règle, pas de la vitesse réelle ;
+- une comparaison de groupes non tirés au hasard ne prouve pas la causalité, elle la rend plus ou moins plausible ;
+- les résultats valent pour le réseau secondaire français entre 2015 et 2024, pas au-delà.
+
+---
+
+## 9. Reproductibilité
+
+**Condition non négociable :** le notebook final doit s'exécuter de la première à la dernière cellule sans erreur. Sinon, la moyenne est impossible.
+
+### 9.1 Principes
+
+- **Aucune donnée téléchargée à la main.** Tout passe par du code qui part des URL publiques (API data.gouv.fr pour les BAAC et les radars, `pynsee` et `cartiflette` pour l'INSEE et les contours).
+- **Exception documentée :** la table `data/departements_90.csv` est construite par nous et versionnée dans le dépôt. Elle est petite (une centaine de lignes), donc sa place dans Git est justifiée.
+- **Les gros fichiers ne vont pas dans Git.** Les BAAC harmonisés en Parquet sont stockés sur l'espace S3 du SSP Cloud (MinIO), comme expliqué dans le cours.
+- **Fonctionnement en cascade :** le notebook lit d'abord la version Parquet sur S3 ; si elle n'est pas accessible, il retélécharge et reconstruit les données depuis les sources brutes. Les deux chemins doivent fonctionner.
+- **Pas de secret dans le code.** Si un identifiant est nécessaire (S3), il passe par des variables d'environnement (`.env` non versionné, `python-dotenv`).
+
+### 9.2 Dépendances
+
+Un fichier `pyproject.toml` (ou `requirements.txt`) avec les versions minimales :
+
+```
+pandas
+pyarrow
+duckdb
+requests
+geopandas
+cartiflette
+pynsee
+matplotlib
+seaborn
+plotnine
+python-dotenv
+s3fs
+nb-clean
+```
+
+### 9.3 Test final
+
+Une semaine avant le rendu, **un membre du groupe qui n'a pas écrit le code** clone le dépôt dans un service SSP Cloud vierge, installe les dépendances en suivant le `README.md`, et lance « Exécuter tout ». Tout problème rencontré est corrigé et le `README.md` mis à jour.
+
+---
+
