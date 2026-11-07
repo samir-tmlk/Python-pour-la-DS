@@ -101,3 +101,181 @@ Le rapport doit conclure sur chaque hypothèse, y compris quand les données ne 
 
 ---
 
+## 4. Les données
+
+### 4.1 Vue d'ensemble
+
+| Source | Producteur | Accès | Contenu utile | Rôle |
+|---|---|---|---|---|
+| BAAC 2010-2024 | ONISR via data.gouv.fr | API data.gouv + CSV | Tous les accidents corporels, lieux, véhicules, usagers | Variable d'intérêt (tués, accidents) |
+| Départements relevés à 90 km/h | **Construit par nous** | Collecte manuelle documentée | Département, date, ampleur du relèvement, source | Définition des groupes |
+| Radars fixes | Ministère de l'Intérieur via data.gouv.fr | CSV | Identifiant, coordonnées GPS, date de mise en service, type, VMA | Q3 |
+| Population par département | INSEE | `pynsee` ou CSV des populations légales | Population annuelle | Taux par habitant |
+| Contours des départements | IGN / INSEE | `cartiflette` | Géométries | Cartes |
+| Trafic | SDES / ONISR | CSV | Ventes de carburant par département ou indice national de circulation | Correction du Covid |
+| Évaluation ONISR du relèvement 2019-2022 | ONISR | PDF | Résultats de référence | Comparaison |
+
+### 4.2 BAAC — accidents corporels
+
+**Lien :** [data.gouv.fr — Bases de données annuelles des accidents corporels de la circulation routière, 2005 à 2024](https://www.data.gouv.fr/datasets/53698f4ca3a729239d2036df/)
+
+Chaque année comprend **4 fichiers CSV** reliés par l'identifiant d'accident `Num_Acc` :
+
+| Fichier | Une ligne = | Variables utiles (à vérifier dans le guide de codification) |
+|---|---|---|
+| `caracteristiques` | un accident | `Num_Acc`, `jour`, `mois`, `an`, `hrmn`, `lum`, `dep`, `com`, `agg` (en/hors agglomération), `atm` (météo), `col` (type de collision), `lat`, `long` |
+| `lieux` | un accident | `catr` (catégorie de route), `circ` (régime de circulation), `nbv` (nombre de voies), `lartpc` (terre-plein central), `vma` (vitesse max., **seulement depuis 2019**), `surf`, `infra`, `situ` |
+| `vehicules` | un véhicule | `catv` (catégorie de véhicule), `obs`, `obsm`, `choc`, `manv` |
+| `usagers` | un usager | `grav` (gravité), `catu`, `sexe`, `an_nais`, `trajet` |
+
+**Codes à connaître (format 2019 et suivants, à vérifier pour les années antérieures) :**
+
+- `grav` : 1 = indemne, 2 = tué, 3 = blessé hospitalisé, 4 = blessé léger
+- `agg` : 1 = hors agglomération, 2 = en agglomération
+- `catr` : 1 = autoroute, 2 = route nationale, 3 = route départementale, 4 = voie communale, …
+- `circ` : 1 = sens unique, 2 = bidirectionnelle, 3 = chaussées séparées, 4 = voies d'affectation variable
+
+**Définition d'un tué :** personne décédée sur le coup ou dans les 30 jours suivant l'accident.
+
+Les deux documents à lire en priorité, joints au jeu de données :
+
+- la **description des bases de données annuelles** (évolutions de format, avertissements) ;
+- le **guide d'utilisation de la codification** du bulletin d'analyse des accidents corporels.
+
+### 4.3 Table des départements revenus aux 90 km/h — notre apport principal
+
+C'est la partie qui valorise le plus la collecte, car **cette table n'existe pas sous forme propre**. Nous la construisons et la versionnons dans `data/departements_90.csv`.
+
+**Schéma de la table :**
+
+| Colonne | Type | Description | Exemple |
+|---|---|---|---|
+| `code_dep` | str | Code département (2 ou 3 caractères) | `19` |
+| `nom_dep` | str | Nom du département | `Corrèze` |
+| `releve` | bool | Le département a-t-il relevé au moins une route ? | `True` |
+| `date_releve` | date | Date d'entrée en vigueur du premier relèvement | `2020-02-01` |
+| `etendue` | str | `total`, `partiel` ou `aucun` | `total` |
+| `km_releves` | float | Kilomètres relevés, si l'information existe | `4000` |
+| `km_reseau` | float | Longueur du réseau départemental, si disponible | `4700` |
+| `source_1` | str | URL de la première source | `https://...` |
+| `source_2` | str | URL d'une source de confirmation | `https://...` |
+| `commentaire` | str | Précisions, incertitudes | `relèvement en deux étapes` |
+
+**Méthode de collecte :**
+
+1. Partir d'une liste agrégée (par exemple celle de la Ligue de défense des conducteurs, reprise par la presse, et celle diffusée par Roole Data en 2025).
+2. Pour chaque département de la liste, chercher **la délibération ou le communiqué du conseil départemental** et un article de presse locale donnant la date d'entrée en vigueur et le linéaire concerné.
+3. Exiger **deux sources concordantes** pour chaque date. En cas de désaccord, retenir la source officielle et noter le désaccord dans `commentaire`.
+4. Les départements absents des listes sont codés `aucun`, après vérification rapide.
+5. Comparer, à la fin, notre classement à celui de l'étude ONISR, qui a défini ses propres groupes.
+
+**Pourquoi l'étendue compte :** certains départements ont relevé presque tout leur réseau (Corrèze, Cantal, Creuse, Allier…), d'autres seulement quelques tronçons (la Dordogne a annoncé 287 km sur environ 4 900 km, l'Indre environ 220 km). Les traiter de la même façon diluerait l'effet. Il faut donc au minimum distinguer `total` et `partiel`, et si possible calculer une **part du réseau relevée**.
+
+> 💡 Si le temps le permet, le scraping de quelques pages de communiqués départementaux peut automatiser une partie de la collecte. Mais la table finale doit être versionnée dans le dépôt pour ne pas dépendre de sites qui peuvent changer.
+
+### 4.4 Radars fixes
+
+**Lien :** [data.gouv.fr — Liste des radars fixes en France](https://www.data.gouv.fr/datasets/liste-des-radars-fixes-en-france/)
+
+Environ 3 400 radars, avec identifiant, coordonnées GPS, date de mise en service, type (ETF, ETD, ETVM, ETU…) et vitesse maximale autorisée. Mis à jour annuellement (dernière mise à jour fin 2025).
+
+> ⚠️ Le fichier liste les radars **actuellement en service**. Les radars démontés ou vandalisés n'y figurent pas, ce qui introduit un biais de survie à discuter.
+
+### 4.5 Données de contexte
+
+- **Population :** populations légales annuelles par département (INSEE), via `pynsee` ou le fichier CSV publié par l'INSEE.
+- **Contours :** `cartiflette`, la bibliothèque utilisée dans le cours, pour récupérer les géométries des départements.
+- **Trafic :** c'est indispensable pour 2020. Deux options, par ordre de préférence :
+  1. ventes de carburant routier par département (SDES), qui servent d'indicateur indirect du trafic local ;
+  2. à défaut, l'indice national de circulation publié dans les bilans annuels de l'ONISR et du SDES.
+
+### 4.6 Ce que nous n'utiliserons pas
+
+- Pas de données Kaggle (interdit par le cours).
+- Pas de base de données de vitesses pratiquées : elle n'est pas disponible en open data à la bonne échelle.
+- Les départements et collectivités d'outre-mer sont exclus : réseaux et règles différents, et couverture incomplète dans l'open data avant 2019.
+
+---
+
+## 5. Nettoyage et harmonisation
+
+C'est l'étape la plus délicate techniquement. Elle doit être **entièrement codée** (aucune modification à la main des fichiers bruts) et **documentée** dans le rapport.
+
+### 5.1 Les ruptures connues des BAAC
+
+| Problème | Années | Traitement |
+|---|---|---|
+| Changement de format en 2019 (variables ajoutées ou renommées, séparateur, encodage) | avant/après 2019 | Une fonction de lecture par format, puis renommage vers un **schéma commun** |
+| Encodage des anciens fichiers (souvent `latin-1`) | avant 2019 | Paramètre `encoding` dans `pd.read_csv`, testé sur chaque année |
+| Séparateur différent selon les années (`,` ou `;`, voire tabulation pour certains fichiers) | variable | Détection automatique ou dictionnaire `{année: séparateur}` |
+| Année sur 2 chiffres, heure au format entier (`1530`) | avant 2019 | Conversion vers une vraie date-heure |
+| Code département avec un zéro final (`590` pour le Nord) dans les anciens fichiers | avant 2019 | Fonction de normalisation vers le code officiel (`59`, `2A`, `2B`…) |
+| Coordonnées dans un format entier et souvent manquantes | avant 2019 | Conversion et contrôle de cohérence (point bien dans le département déclaré) |
+| Variable `vma` (vitesse maximale autorisée) absente | avant 2019 | Voir 5.2 |
+| Ajout des usagers en fuite | depuis 2021 | Exclure ou isoler ces usagers pour garder une série comparable |
+| Fiabilité des blessés hospitalisés | depuis 2018 | Indicateur principal = **tués** ; blessés en analyse secondaire seulement |
+
+### 5.2 Identifier le réseau concerné par la mesure
+
+La mesure de 2018 concerne les routes **hors agglomération**, **bidirectionnelles**, **sans séparateur central**. Nous définissons donc :
+
+```
+reseau_concerne = (agg == hors agglomération)
+                  & (circ == bidirectionnelle)
+                  & (catr in {route nationale, route départementale, voie communale})
+```
+
+- Depuis 2019, on peut **vérifier** cette règle avec la variable `vma` (part des accidents du réseau concerné avec `vma` égale à 80 ou 90).
+- Avant 2019, on applique la même règle sans pouvoir la vérifier. Il faut le dire dans le rapport.
+- Pour Q2, on se restreint aux **routes départementales** (`catr == 3`), puisque ce sont les départements qui décident du relèvement.
+
+> 📝 Documenter dans le rapport : la règle exacte, la part des accidents classés « concernés » chaque année, et un tableau de contrôle par année pour montrer l'absence de saut artificiel en 2019.
+
+### 5.3 Schéma de sortie
+
+Toutes les années sont empilées dans **deux tables Parquet** :
+
+- `accidents.parquet` : une ligne par accident (caractéristiques + lieux) avec `annee`, `mois`, `date`, `code_dep`, `reseau_concerne`, `catr`, `type_collision`, `nb_tues`, `nb_blesses`, `lat`, `lon` ;
+- `usagers.parquet` : une ligne par usager, pour les analyses par âge ou type d'usager.
+
+### 5.4 Exemple de squelette de code
+
+```python
+# src/collecte.py
+import requests
+
+DATASET_BAAC = "53698f4ca3a729239d2036df"
+
+def lister_ressources_baac() -> list[dict]:
+    """Interroge l'API data.gouv.fr et renvoie les fichiers du jeu BAAC."""
+    url = f"https://www.data.gouv.fr/api/1/datasets/{DATASET_BAAC}/"
+    reponse = requests.get(url, timeout=30)
+    reponse.raise_for_status()
+    return [
+        {"titre": r["title"], "url": r["url"], "format": r["format"]}
+        for r in reponse.json()["resources"]
+    ]
+```
+
+```python
+# src/nettoyage.py
+import pandas as pd
+
+def normaliser_departement(code: str) -> str:
+    """Convertit les anciens codes BAAC (ex. '590') en codes officiels ('59')."""
+    ...
+
+def lire_caracteristiques(url: str, annee: int) -> pd.DataFrame:
+    """Lit un fichier 'caracteristiques' quelle que soit l'année
+    et renvoie un DataFrame au schéma commun."""
+    sep = ";" if annee >= 2019 else ","
+    encodage = "utf-8" if annee >= 2019 else "latin-1"
+    df = pd.read_csv(url, sep=sep, encoding=encodage, dtype=str)
+    ...
+    return df
+```
+
+Chaque fonction a une docstring, prend des paramètres explicites et ne dépend d'aucun chemin local en dur.
+
+---
+
